@@ -76,7 +76,7 @@ vim.opt.wrap = true
 
 vim.opt.swapfile = false
 vim.opt.backup = false
-vim.opt.undodir = os.getenv("HOME") .. "/.vim/undodir"
+vim.opt.undodir = os.getenv 'HOME' .. '/.vim/undodir'
 vim.opt.undofile = true
 
 vim.opt.incsearch = true
@@ -84,8 +84,8 @@ vim.opt.incsearch = true
 vim.opt.termguicolors = true
 
 opt.scrolloff = 8
-vim.opt.signcolumn = "yes"
-vim.opt.isfname:append("@-@")
+vim.opt.signcolumn = 'yes'
+vim.opt.isfname:append '@-@'
 
 vim.o.hlsearch = true
 
@@ -116,7 +116,7 @@ require('lazy').setup({
 
       -- Useful status updates for LSP
       -- NOTE: `opts = {}` is the same as calling `require('fidget').setup({})`
-      { 'j-hui/fidget.nvim',       tag = 'legacy', opts = {} },
+      { 'j-hui/fidget.nvim', tag = 'legacy', opts = {} },
 
       -- Additional lua configuration, makes nvim stuff amazing!
       'folke/neodev.nvim',
@@ -140,7 +140,7 @@ require('lazy').setup({
   },
 
   -- Useful plugin to show you pending keybinds.
-  { 'folke/which-key.nvim',  opts = {} },
+  { 'folke/which-key.nvim', opts = {} },
   {
     -- Adds git related signs to the gutter, as well as utilities for managing changes
     'lewis6991/gitsigns.nvim',
@@ -159,15 +159,23 @@ require('lazy').setup({
         -- don't override the built-in and fugitive keymaps
         local gs = package.loaded.gitsigns
         vim.keymap.set({ 'n', 'v' }, ']c', function()
-          if vim.wo.diff then return ']c' end
-          vim.schedule(function() gs.next_hunk() end)
+          if vim.wo.diff then
+            return ']c'
+          end
+          vim.schedule(function()
+            gs.next_hunk()
+          end)
           return '<Ignore>'
-        end, { expr = true, buffer = bufnr, desc = "Jump to next hunk" })
+        end, { expr = true, buffer = bufnr, desc = 'Jump to next hunk' })
         vim.keymap.set({ 'n', 'v' }, '[c', function()
-          if vim.wo.diff then return '[c' end
-          vim.schedule(function() gs.prev_hunk() end)
+          if vim.wo.diff then
+            return '[c'
+          end
+          vim.schedule(function()
+            gs.prev_hunk()
+          end)
           return '<Ignore>'
-        end, { expr = true, buffer = bufnr, desc = "Jump to previous hunk" })
+        end, { expr = true, buffer = bufnr, desc = 'Jump to previous hunk' })
       end,
     },
   },
@@ -217,7 +225,11 @@ require('lazy').setup({
 
   -- "gc" to comment visual regions/lines
   { 'numToStr/Comment.nvim', opts = {} },
-  
+
+  { 'mfussenegger/nvim-jdtls' },
+
+  { 'jose-elias-alvarez/null-ls.nvim' },
+  { 'jayp0521/mason-null-ls.nvim' },
   -- Fuzzy Finder (files, lsp, etc)
   {
     'nvim-telescope/telescope.nvim',
@@ -449,6 +461,8 @@ local on_attach = function(_, bufnr)
   nmap('<leader>rn', vim.lsp.buf.rename, '[R]e[n]ame')
   nmap('<leader>ca', vim.lsp.buf.code_action, '[C]ode [A]ction')
 
+  --vim.api.nvim_set_keymap('n', 'gd', '<Cmd>lua vim.lsp.buf.definition()<CR>', { noremap = true, silent = true })
+
   nmap('gd', vim.lsp.buf.definition, '[G]oto [D]efinition')
   nmap('gr', require('telescope.builtin').lsp_references, '[G]oto [R]eferences')
   nmap('gI', require('telescope.builtin').lsp_implementations, '[G]oto [I]mplementation')
@@ -485,6 +499,7 @@ end
 local servers = {
   clangd = {},
   gopls = {},
+  jdtls = {},
   pyright = {},
   rust_analyzer = {},
   tsserver = {},
@@ -497,7 +512,6 @@ local servers = {
     },
   },
 }
-
 
 -- Setup neovim lua configuration
 require('neodev').setup()
@@ -513,6 +527,11 @@ mason_lspconfig.setup {
   ensure_installed = vim.tbl_keys(servers),
 }
 
+local mason_null_ls_status, mason_null_ls = pcall(require, 'mason-null-ls')
+if not mason_null_ls_status then
+  return
+end
+
 mason_lspconfig.setup_handlers {
   function(server_name)
     require('lspconfig')[server_name].setup {
@@ -521,7 +540,19 @@ mason_lspconfig.setup_handlers {
       settings = servers[server_name],
       filetypes = (servers[server_name] or {}).filetypes,
     }
-  end
+  end,
+}
+
+mason_null_ls.setup {
+  -- list of formatters & linters for mason to install
+  ensure_installed = {
+    'prettier', -- ts/js formatter
+    'stylua', -- lua formatter
+    'eslint_d', -- ts/js linter
+    'golangci_lint_ls',
+  },
+  -- auto-install configured formatters & linters (with null-ls)
+  automatic_installation = true,
 }
 
 -- [[ Configure nvim-cmp ]]
@@ -573,7 +604,58 @@ cmp.setup {
   },
 }
 
-require("transparent").setup()
+require('transparent').setup()
+
+-- import null-ls plugin safely
+local setup, null_ls = pcall(require, 'null-ls')
+if not setup then
+  return
+end
+
+-- for conciseness
+local formatting = null_ls.builtins.formatting -- to setup formatters
+local diagnostics = null_ls.builtins.diagnostics -- to setup linters
+
+-- to setup format on save
+local augroup = vim.api.nvim_create_augroup('LspFormatting', {})
+
+-- configure null_ls
+null_ls.setup {
+  -- setup formatters & linters
+  sources = {
+    --  to disable file types use
+    --  "formatting.prettier.with({disabled_filetypes = {}})" (see null-ls docs)
+    formatting.prettier, -- js/ts formatter
+    formatting.stylua, -- lua formatter
+    diagnostics.eslint_d.with { -- js/ts linter
+      -- only enable eslint if root has .eslintrc.js (not in youtube nvim video)
+      condition = function(utils)
+        return utils.root_has_file '.eslintrc.js' -- change file extension if you use something else
+      end,
+    },
+  },
+  -- configure format on save
+  on_attach = function(current_client, bufnr)
+    if current_client.supports_method 'textDocument/formatting' then
+      vim.api.nvim_clear_autocmds { group = augroup, buffer = bufnr }
+      vim.api.nvim_create_autocmd('BufWritePre', {
+        group = augroup,
+        buffer = bufnr,
+        callback = function()
+          vim.lsp.buf.format {
+            filter = function(client)
+              --  only use null-ls for formatting instead of lsp server
+              return client.name == 'null-ls'
+            end,
+            bufnr = bufnr,
+          }
+        end,
+      })
+    end
+  end,
+}
+
+vim.api.nvim_set_keymap('n', '<Leader>ff', '<cmd>lua vim.lsp.buf.formatting()<CR>', { noremap = true, silent = true })
 
 -- The line beneath this is called `modeline`. See `:help modeline`
 -- vim: ts=2 sts=2 sw=2 et
